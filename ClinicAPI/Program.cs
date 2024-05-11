@@ -16,7 +16,10 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.EnableAnnotations(); // Make sure annotations are enabled
+});
 
 var patientFilePath = builder.Configuration["PatientFilePath"] ?? throw new InvalidOperationException("Patient file path is not configured. Please specify the path in appsettings.json under the PatientFilePath key");
 builder.Services.AddSingleton<PatientService>(serviceProvider => new PatientService(patientFilePath));
@@ -68,14 +71,14 @@ app.UseExceptionHandler(appError =>
     });
 });
 
-app.MapPost("/patients", (PatientService service, Patient patient) => {
+app.MapPost("/patients", async (PatientService service, Patient patient) => {
     try {
-    service.CreatePatient(patient);
-    return Results.Ok(patient);
+        await service.CreatePatient(patient);
+        return Results.Ok(patient);
     } catch (ValidationException ex) {
         Log.Information(ex.Message);
         return Results.BadRequest(ex.Message);
-    }catch (Exception ex) {
+    } catch (Exception ex) {
         Log.Error(ex, "Failed to create patient.");
         return Results.Problem(ex.Message);
     }
@@ -140,5 +143,22 @@ app.MapGet("/patients/{ci}", (PatientService service, string ci) => {
         return Results.Problem(ex.Message);
     }
 }).WithName("GetPatientByCI");
+
+app.MapGet("/patients-code/{code}", (PatientService service, string code) => {
+    try {
+        var patient = service.GetPatientByCode(code);
+        if (patient != null) {
+            return Results.Ok(patient);
+        } else {
+            throw new NotFoundException("Patient not found");
+        }
+    } catch (NotFoundException ex) {
+        Log.Information(ex.Message);
+        return Results.NotFound(ex.Message);
+    } catch (Exception ex) {
+        Log.Error(ex, "Failed to retrieve patient by Code.");
+        return Results.Problem(ex.Message);
+    }
+}).WithName("GetPatientByCode");
 
 app.Run();
